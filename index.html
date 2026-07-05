@@ -182,10 +182,17 @@ body{background:var(--bg);color:var(--text);font-family:"Poppins",sans-serif;fon
 @media(max-width:600px){.form-grid{grid-template-columns:1fr}.metric-grid{grid-template-columns:1fr 1fr}.pgto-origem-grid{grid-template-columns:1fr}}
 
 /* PERIOD SELECTOR */
-.period-bar{display:flex;gap:6px;margin-bottom:14px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:5px;box-shadow:var(--shadow)}
+.period-bar{display:flex;gap:6px;margin-bottom:14px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:5px;box-shadow:var(--shadow);position:relative}
 .period-btn{flex:1;padding:8px 4px;border:none;background:none;border-radius:var(--radius-sm);font-family:"Poppins",sans-serif;font-size:12px;font-weight:600;color:var(--text3);cursor:pointer;transition:all var(--tr);text-align:center}
 .period-btn.active{background:var(--purple);color:#fff;box-shadow:0 2px 8px rgba(103,65,217,.25)}
 .period-btn:not(.active):hover{background:var(--purple-lt);color:var(--purple)}
+.period-month-wrap{flex:1;position:relative}
+.period-month-btn{width:100%}
+.month-picker-dropdown{display:none;position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-md);z-index:500;min-width:160px;overflow:hidden}
+.month-picker-dropdown.open{display:block}
+.month-option{display:block;width:100%;padding:10px 16px;border:none;background:none;font-family:"Poppins",sans-serif;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;text-align:left;transition:background var(--tr)}
+.month-option:hover{background:var(--purple-lt);color:var(--purple)}
+.month-option.active{background:var(--purple-xlt);color:var(--purple);font-weight:700}
 </style>
 
 <script id="pwa-manifest">
@@ -267,8 +274,11 @@ body{background:var(--bg);color:var(--text);font-family:"Poppins",sans-serif;fon
   <div class="period-bar">
     <button class="period-btn" onclick="setPeriod('hoje')">Hoje</button>
     <button class="period-btn" onclick="setPeriod('7d')">7 dias</button>
-    <button class="period-btn" onclick="setPeriod('30d')">30 dias</button>
     <button class="period-btn active" onclick="setPeriod('mes')">Este mês</button>
+    <div class="period-month-wrap">
+      <button class="period-btn period-month-btn" id="month-picker-btn" onclick="toggleMonthPicker()">📅 Mês</button>
+      <div class="month-picker-dropdown" id="month-picker-dropdown"></div>
+    </div>
     <button class="period-btn" onclick="setPeriod('tudo')">Tudo</button>
   </div>
   <div class="metric-grid" id="metrics"></div>
@@ -932,15 +942,69 @@ function drawChart(canvas, labels, values) {
 
 let currentPeriod = 'mes';
 
-const PERIOD_LABEL = {hoje:'Hoje','7d':'Últ. 7 dias','30d':'Últ. 30 dias',mes:'Este mês',tudo:'Tudo'};
+const PERIOD_LABEL = {hoje:'Hoje','7d':'Últ. 7 dias',mes:'Este mês','mes-especifico':'Mês',tudo:'Tudo'};
+
+let selectedMonth = ''; // formato 'YYYY-MM'
 
 function setPeriod(p){
   currentPeriod = p;
+  selectedMonth = '';
+  closeMonthPicker();
   document.querySelectorAll('.period-btn').forEach(b=>b.classList.remove('active'));
-  const map = {hoje:0,'7d':1,'30d':2,mes:3,tudo:4};
-  document.querySelectorAll('.period-btn')[map[p]].classList.add('active');
+  const map = {hoje:0,'7d':1,mes:2,tudo:4};
+  if(map[p]!==undefined) document.querySelectorAll('.period-btn')[map[p]].classList.add('active');
   renderPainel();
 }
+
+function buildMonthPicker(){
+  // Coleta todos os meses únicos dos lançamentos
+  const months = {};
+  entries.forEach(e=>{
+    if(!e.data_atendimento) return;
+    const m = e.data_atendimento.slice(0,7);
+    months[m] = true;
+  });
+  // Adiciona o mês atual mesmo sem lançamentos
+  const now = new Date();
+  const cur = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  months[cur] = true;
+
+  const sorted = Object.keys(months).sort().reverse();
+  const dd = document.getElementById('month-picker-dropdown');
+  dd.innerHTML = sorted.map(m => {
+    const [y, mo] = m.split('-');
+    const label = new Date(y, mo-1).toLocaleString('pt-BR',{month:'long',year:'numeric'});
+    const labelCap = label.charAt(0).toUpperCase() + label.slice(1);
+    return `<button class="month-option${selectedMonth===m?' active':''}" onclick="selectMonth('${m}')">${labelCap}</button>`;
+  }).join('');
+}
+
+function toggleMonthPicker(){
+  const dd = document.getElementById('month-picker-dropdown');
+  const isOpen = dd.classList.contains('open');
+  if(!isOpen) buildMonthPicker();
+  dd.classList.toggle('open');
+}
+
+function closeMonthPicker(){
+  document.getElementById('month-picker-dropdown').classList.remove('open');
+}
+
+function selectMonth(m){
+  selectedMonth = m;
+  currentPeriod = 'mes-especifico';
+  closeMonthPicker();
+  // Destacar botão mês
+  document.querySelectorAll('.period-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('month-picker-btn').classList.add('active');
+  renderPainel();
+}
+
+// Fechar dropdown ao clicar fora
+document.addEventListener('click', function(e){
+  const wrap = document.querySelector('.period-month-wrap');
+  if(wrap && !wrap.contains(e.target)) closeMonthPicker();
+});
 
 function localDateStr(date) {
   const y = date.getFullYear();
@@ -958,14 +1022,12 @@ function filterByPeriod(list){
     const from=localDateStr(d);
     return list.filter(e=>e.data_atendimento>=from&&e.data_atendimento<=today);
   }
-  if(currentPeriod==='30d'){
-    const d=new Date(now); d.setDate(d.getDate()-29);
-    const from=localDateStr(d);
-    return list.filter(e=>e.data_atendimento>=from&&e.data_atendimento<=today);
-  }
   if(currentPeriod==='mes'){
     const mes=String(now.getMonth()+1).padStart(2,'0'),ano=now.getFullYear();
     return list.filter(e=>e.data_atendimento&&e.data_atendimento.startsWith(`${ano}-${mes}`));
+  }
+  if(currentPeriod==='mes-especifico'&&selectedMonth){
+    return list.filter(e=>e.data_atendimento&&e.data_atendimento.startsWith(selectedMonth));
   }
   return list;
 }
