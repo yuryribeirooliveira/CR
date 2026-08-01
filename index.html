@@ -156,7 +156,7 @@ body{background:var(--bg);color:var(--text);font-family:"Poppins",sans-serif;fon
 .period-btn:not(.active):hover{background:var(--purple-lt);color:var(--purple2)}
 .period-month-wrap{position:relative;flex-shrink:0}
 .period-month-btn{width:100%}
-.month-picker-dropdown{display:none;position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#211d34;border:1px solid var(--card-border);border-radius:var(--radius);box-shadow:0 8px 32px rgba(0,0,0,.6);z-index:500;min-width:180px;overflow:hidden}
+.month-picker-dropdown{display:none;position:fixed;top:auto;left:50%;transform:translateX(-50%);background:#211d34;border:1px solid var(--card-border);border-radius:var(--radius);box-shadow:0 8px 32px rgba(0,0,0,.8);z-index:9000;min-width:200px;overflow:hidden;max-height:60vh;overflow-y:auto}
 .month-picker-dropdown.open{display:block}
 .month-option{display:block;width:100%;padding:11px 16px;border:none;background:none;font-family:"Poppins",sans-serif;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;text-align:left;transition:background var(--tr)}
 .month-option:hover{background:var(--purple-lt);color:var(--purple2)}
@@ -1007,19 +1007,66 @@ function setPeriod(p){
 }
 
 function buildMonthPicker(){
-  const months={};
-  entries.forEach(e=>{if(e.data_atendimento) months[e.data_atendimento.slice(0,7)]=true});
-  const now=new Date();
-  months[`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`]=true;
-  const sorted=Object.keys(months).sort().reverse();
-  const dd=document.getElementById('month-picker-dropdown');
-  dd.innerHTML=sorted.map(m=>{
-    const[y,mo]=m.split('-');
-    const label=new Date(y,mo-1).toLocaleString('pt-BR',{month:'long',year:'numeric'});
-    return`<button class="month-option${selectedMonth===m?' active':''}" onclick="selectMonth('${m}')">${label.charAt(0).toUpperCase()+label.slice(1)}</button>`;
+  // Pegar o mês mais antigo dos lançamentos
+  let oldest = null;
+  entries.forEach(e=>{
+    if(e.data_atendimento){
+      const m = e.data_atendimento.slice(0,7);
+      if(!oldest || m < oldest) oldest = m;
+    }
+  });
+
+  // Se não tiver lançamentos, começa do mês atual
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  if(!oldest) oldest = currentMonth;
+
+  // Gerar todos os meses desde o mais antigo até o atual
+  const months = [];
+  let [sy, sm] = oldest.split('-').map(Number);
+  const [ey, em] = currentMonth.split('-').map(Number);
+  while(sy < ey || (sy === ey && sm <= em)){
+    months.push(`${sy}-${String(sm).padStart(2,'0')}`);
+    sm++;
+    if(sm > 12){ sm = 1; sy++; }
+  }
+
+  // Ordenar do mais recente para o mais antigo
+  months.reverse();
+
+  // Contar lançamentos por mês para mostrar indicador
+  const counts = {};
+  entries.forEach(e=>{
+    if(e.data_atendimento){
+      const m = e.data_atendimento.slice(0,7);
+      counts[m] = (counts[m]||0) + 1;
+    }
+  });
+
+  const dd = document.getElementById('month-picker-dropdown');
+  dd.innerHTML = months.map(m=>{
+    const [y, mo] = m.split('-');
+    const label = new Date(y, mo-1).toLocaleString('pt-BR',{month:'long', year:'numeric'});
+    const labelCap = label.charAt(0).toUpperCase() + label.slice(1);
+    const count = counts[m] || 0;
+    const countLabel = count > 0 ? `<span style="font-size:10px;color:var(--purple2);margin-left:6px">${count} atend.</span>` : `<span style="font-size:10px;color:var(--text3);margin-left:6px">sem lançamentos</span>`;
+    return`<button class="month-option${selectedMonth===m?' active':''}" onclick="selectMonth('${m}')" style="display:flex;justify-content:space-between;align-items:center">${labelCap}${countLabel}</button>`;
   }).join('');
 }
-function toggleMonthPicker(){const dd=document.getElementById('month-picker-dropdown');if(!dd.classList.contains('open')) buildMonthPicker();dd.classList.toggle('open')}
+function toggleMonthPicker(){
+  const dd=document.getElementById('month-picker-dropdown');
+  const btn=document.getElementById('month-picker-btn');
+  if(!dd.classList.contains('open')){
+    buildMonthPicker();
+    // Posicionar o dropdown abaixo do botão
+    const rect=btn.getBoundingClientRect();
+    dd.style.top=(rect.bottom+6)+'px';
+    // Centralizar horizontalmente na tela
+    dd.style.left='50%';
+    dd.style.transform='translateX(-50%)';
+  }
+  dd.classList.toggle('open');
+}
 function closeMonthPicker(){document.getElementById('month-picker-dropdown').classList.remove('open')}
 function selectMonth(m){
   selectedMonth=m;currentPeriod='mes-especifico';closeMonthPicker();
