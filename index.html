@@ -1007,39 +1007,44 @@ function setPeriod(p){
 }
 
 function buildMonthPicker(){
-  // Pegar o mês mais antigo dos lançamentos
-  let oldest = null;
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonthNum = now.getMonth() + 1;
+
+  // Sempre começa em Janeiro do ano atual (ou do mais antigo se tiver lançamento antes)
+  let startYear = currentYear;
+  let startMonth = 1;
+
+  // Verificar se tem lançamento antes de janeiro do ano atual
   entries.forEach(e=>{
     if(e.data_atendimento){
-      const m = e.data_atendimento.slice(0,7);
-      if(!oldest || m < oldest) oldest = m;
+      const [y, m] = e.data_atendimento.slice(0,7).split('-').map(Number);
+      if(y < startYear || (y === startYear && m < startMonth)){
+        startYear = y;
+        startMonth = m;
+      }
     }
   });
 
-  // Se não tiver lançamentos, começa do mês atual
-  const now = new Date();
-  const currentMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  if(!oldest) oldest = currentMonth;
-
-  // Gerar todos os meses desde o mais antigo até o atual
+  // Gerar TODOS os meses de startYear/startMonth até o mês atual
   const months = [];
-  let [sy, sm] = oldest.split('-').map(Number);
-  const [ey, em] = currentMonth.split('-').map(Number);
-  while(sy < ey || (sy === ey && sm <= em)){
+  let sy = startYear, sm = startMonth;
+  while(sy < currentYear || (sy === currentYear && sm <= currentMonthNum)){
     months.push(`${sy}-${String(sm).padStart(2,'0')}`);
     sm++;
     if(sm > 12){ sm = 1; sy++; }
   }
 
-  // Ordenar do mais recente para o mais antigo
-  months.reverse();
+  // Janeiro primeiro, Dezembro por último — ordem cronológica natural
 
-  // Contar lançamentos por mês para mostrar indicador
+  // Contar lançamentos por mês
   const counts = {};
+  const totals = {};
   entries.forEach(e=>{
     if(e.data_atendimento){
       const m = e.data_atendimento.slice(0,7);
       counts[m] = (counts[m]||0) + 1;
+      totals[m] = (totals[m]||0) + Number(e.valor);
     }
   });
 
@@ -1049,8 +1054,19 @@ function buildMonthPicker(){
     const label = new Date(y, mo-1).toLocaleString('pt-BR',{month:'long', year:'numeric'});
     const labelCap = label.charAt(0).toUpperCase() + label.slice(1);
     const count = counts[m] || 0;
-    const countLabel = count > 0 ? `<span style="font-size:10px;color:var(--purple2);margin-left:6px">${count} atend.</span>` : `<span style="font-size:10px;color:var(--text3);margin-left:6px">sem lançamentos</span>`;
-    return`<button class="month-option${selectedMonth===m?' active':''}" onclick="selectMonth('${m}')" style="display:flex;justify-content:space-between;align-items:center">${labelCap}${countLabel}</button>`;
+    const isActive = selectedMonth === m;
+    if(count > 0){
+      const total = 'R$ ' + totals[m].toLocaleString('pt-BR',{minimumFractionDigits:2});
+      return`<button class="month-option${isActive?' active':''}" onclick="selectMonth('${m}')" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+        <span>${labelCap}</span>
+        <span style="font-size:10px;color:${isActive?'#fff':'var(--purple2)'};white-space:nowrap">${count} atend. · ${total}</span>
+      </button>`;
+    } else {
+      return`<button class="month-option${isActive?' active':''}" onclick="selectMonth('${m}')" style="display:flex;justify-content:space-between;align-items:center;gap:12px;opacity:.5">
+        <span>${labelCap}</span>
+        <span style="font-size:10px;color:var(--text3)">sem lançamentos</span>
+      </button>`;
+    }
   }).join('');
 }
 function toggleMonthPicker(){
