@@ -568,11 +568,16 @@ body{background:var(--bg);color:var(--text);font-family:"Poppins",sans-serif;fon
   <div class="card" style="padding:16px;margin-bottom:14px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
       <div class="card-title" style="margin:0">⭐ Ranking de clientes</div>
-      <select id="rank-periodo" onchange="renderClientes()" style="padding:5px 10px;background:#0f0e17;border:1px solid var(--card-border);border-radius:var(--radius-sm);font-family:'Poppins',sans-serif;font-size:11px;color:var(--text3)">
-        <option value="tudo">Todo período</option>
-        <option value="mes">Este mês</option>
-        <option value="30d">Últimos 30 dias</option>
-      </select>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="rank-periodo" onchange="renderClientes()" style="padding:5px 10px;background:#0f0e17;border:1px solid var(--card-border);border-radius:var(--radius-sm);font-family:'Poppins',sans-serif;font-size:11px;color:var(--text3)">
+          <option value="tudo">Tempo todo</option>
+          <option value="mes">Este mês</option>
+        </select>
+        <div style="position:relative">
+          <button id="rank-month-btn" onclick="toggleRankMonthPicker()" style="padding:5px 10px;background:#0f0e17;border:1px solid var(--card-border);border-radius:var(--radius-sm);font-family:'Poppins',sans-serif;font-size:11px;color:var(--text3);cursor:pointer;white-space:nowrap">📅 Mês</button>
+          <div id="rank-month-dropdown" style="display:none;position:fixed;background:#211d34;border:1px solid var(--card-border);border-radius:var(--radius);box-shadow:0 8px 32px rgba(0,0,0,.8);z-index:9000;min-width:220px;max-height:50vh;overflow-y:auto"></div>
+        </div>
+      </div>
     </div>
     <p style="font-size:11px;color:var(--text3);margin-bottom:14px">Clientes que mais investiram com você</p>
     <div id="clientes-list"></div>
@@ -1029,7 +1034,8 @@ function buildMonthPicker(){
   // Gerar TODOS os meses de startYear/startMonth até o mês atual
   const months = [];
   let sy = startYear, sm = startMonth;
-  while(sy < currentYear || (sy === currentYear && sm <= currentMonthNum)){
+  // Vai até dezembro do ano atual (não só o mês atual)
+  while(sy < currentYear || (sy === currentYear && sm <= 12)){
     months.push(`${sy}-${String(sm).padStart(2,'0')}`);
     sm++;
     if(sm > 12){ sm = 1; sy++; }
@@ -1237,17 +1243,90 @@ async function removeEntry(id){
 }
 
 /* ── CLIENTES ── */
+let selectedRankMonth = '';
+
+function toggleRankMonthPicker(){
+  const dd = document.getElementById('rank-month-dropdown');
+  const btn = document.getElementById('rank-month-btn');
+  if(dd.style.display === 'none' || dd.style.display === ''){
+    buildRankMonthPicker();
+    const rect = btn.getBoundingClientRect();
+    dd.style.top = (rect.bottom + 6) + 'px';
+    dd.style.left = 'auto';
+    dd.style.right = (window.innerWidth - rect.right) + 'px';
+    dd.style.display = 'block';
+  } else {
+    dd.style.display = 'none';
+  }
+}
+
+function buildRankMonthPicker(){
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  let startYear = currentYear, startMonth = 1;
+  entries.forEach(e=>{
+    if(e.data_atendimento){
+      const [y,m] = e.data_atendimento.slice(0,7).split('-').map(Number);
+      if(y < startYear || (y === startYear && m < startMonth)){startYear=y;startMonth=m}
+    }
+  });
+  const months = [];
+  let sy = startYear, sm = startMonth;
+  while(sy < currentYear || (sy === currentYear && sm <= 12)){
+    months.push(`${sy}-${String(sm).padStart(2,'0')}`);
+    sm++; if(sm>12){sm=1;sy++;}
+  }
+  const counts = {};
+  entries.forEach(e=>{if(e.data_atendimento){const m=e.data_atendimento.slice(0,7);counts[m]=(counts[m]||0)+1}});
+  const dd = document.getElementById('rank-month-dropdown');
+  dd.innerHTML = months.map(m=>{
+    const [y,mo] = m.split('-');
+    const label = new Date(y,mo-1).toLocaleString('pt-BR',{month:'long',year:'numeric'});
+    const labelCap = label.charAt(0).toUpperCase()+label.slice(1);
+    const count = counts[m]||0;
+    const isActive = selectedRankMonth === m;
+    return`<button onclick="selectRankMonth('${m}')" style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;padding:11px 16px;border:none;background:none;font-family:'Poppins',sans-serif;font-size:13px;font-weight:500;color:${isActive?'var(--purple2)':'var(--text2)'};cursor:pointer;text-align:left;transition:background .15s;${count===0?'opacity:.5':''}" onmouseover="this.style.background='var(--purple-lt)'" onmouseout="this.style.background='none'">
+      <span>${labelCap}</span>
+      <span style="font-size:10px;color:${isActive?'var(--purple2)':'var(--text3)'}">${count>0?count+' atend.':'vazio'}</span>
+    </button>`;
+  }).join('');
+}
+
+function selectRankMonth(m){
+  selectedRankMonth = m;
+  document.getElementById('rank-month-dropdown').style.display='none';
+  // Desmarcar o select
+  document.getElementById('rank-periodo').value = '';
+  // Atualizar label do botão
+  const [y,mo] = m.split('-');
+  const label = new Date(y,mo-1).toLocaleString('pt-BR',{month:'short',year:'2-digit'});
+  document.getElementById('rank-month-btn').textContent = '📅 '+label.charAt(0).toUpperCase()+label.slice(1);
+  renderClientes();
+}
+
+// Fechar dropdown ao clicar fora
+document.addEventListener('click',function(e){
+  const btn=document.getElementById('rank-month-btn');
+  const dd=document.getElementById('rank-month-dropdown');
+  if(btn&&dd&&!btn.contains(e.target)&&!dd.contains(e.target)) dd.style.display='none';
+});
+
 function renderClientes(){
   const periodo=document.getElementById('rank-periodo').value;
   let list=entries;
-  if(periodo==='mes'){
+  // Se tiver mês selecionado no picker, usa ele
+  if(selectedRankMonth && !periodo){
+    list=entries.filter(e=>e.data_atendimento&&e.data_atendimento.startsWith(selectedRankMonth));
+  } else if(periodo==='mes'){
+    // Ao selecionar no select, limpa o mês do picker
+    selectedRankMonth='';
+    document.getElementById('rank-month-btn').textContent='📅 Mês';
     const now=new Date();
     const mes=String(now.getMonth()+1).padStart(2,'0'),ano=now.getFullYear();
     list=entries.filter(e=>e.data_atendimento&&e.data_atendimento.startsWith(`${ano}-${mes}`));
-  } else if(periodo==='30d'){
-    const now=new Date();const d=new Date(now);d.setDate(d.getDate()-29);
-    const from=localDateStr(d),today=localDateStr(now);
-    list=entries.filter(e=>e.data_atendimento>=from&&e.data_atendimento<=today);
+  } else if(periodo==='tudo'){
+    selectedRankMonth='';
+    document.getElementById('rank-month-btn').textContent='📅 Mês';
   }
   // Agrupar por cliente (só quem tem nome)
   const nomeados=list.filter(e=>e.cliente&&e.cliente.trim());
